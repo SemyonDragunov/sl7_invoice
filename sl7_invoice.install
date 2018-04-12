@@ -1,0 +1,24 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for the SL7 Invoice module.
+ * 
+ * @author Semyon Dragunov <sam.dragunov@gmail.com>
+ * https://github.com/SemyonDragunov
+ */
+
+function sl7_invoice_install() {
+  variable_set('sl7_invoice_gm_post', 'Генеральный директор');
+  variable_set('sl7_invoice_ca_post', 'Главный бухгалтер');
+}
+
+function sl7_invoice_uninstall() {
+  $result = db_select('variable', 'v')
+    ->fields('v', array('name'))
+    ->condition('name', 'sl7_invoice_%', 'LIKE')
+    ->execute();
+
+  foreach ($result as $row) {
+    variable_del($row->name);
+  }
+}

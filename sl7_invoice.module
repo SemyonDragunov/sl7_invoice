@@ -1,0 +1,356 @@
+<?php
+
+/**
+ * @author Semyon Dragunov <sam.dragunov@gmail.com>
+ * https://github.com/SemyonDragunov
+ */
+
+define('SL7_INVOICE_PATH', SL7_CONTROL_PANEL_ADMIN_PATH . '/payment/invoice');
+
+/**
+ * Implements hook_menu().
+ */
+function sl7_invoice_menu() {
+
+  $items[SL7_INVOICE_PATH] = array(
+    'title' => 'Счет (юридическое лицо)',
+    'description' => 'Настройка способа оплаты.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('sl7_invoice_settings_form'),
+    'access arguments' => array('administer sl7_invoice'),
+  );
+
+  return $items;
+}
+
+function sl7_invoice_permission() {
+  return array(
+    'administer sl7_invoice' => array('title' => 'Управление способом оплаты'),
+  );
+}
+
+/**
+ * Implements hook_theme().
+ */
+function sl7_invoice_theme() {
+  $items = array(
+    'sl7_invoice' => array(
+      'template' => 'templates/sl7-invoice',
+      'variables' => array(
+        'order' => NULL,
+        'customer' => NULL,
+        'nds' => NULL,
+        'sum' => NULL,
+        'sum_str' => NULL,
+      ),
+    ),
+  );
+
+  foreach ($items as &$item) {
+    if (!isset($item['file'])) {
+      $item['file'] = 'templates/theme.inc';
+    }
+  }
+
+  return $items;
+}
+
+/**
+ * Implements hook_sl7_payment_info().
+ */
+function sl7_invoice_sl7_payment_info() {
+
+  $payment['sl7_invoice'] = array(
+    'title' => 'Счет (юридическое лицо)',
+    'description' => 'Счет безналичной оплаты для юридических лиц.',
+    'controller' => 'SL7InvoicePaymentController',
+    'callback' => 'sl7_invoice_callback',
+    'customer' => 'sl7_invoice_customer',
+    'img' => drupal_get_path('module', 'sl7_invoice') . '/img/sl7_invoice.png',
+  );
+
+  return $payment;
+}
+
+function sl7_invoice_customer() {
+
+  $form['field_name'] = array(
+    '#title' => 'Название компании/ИП/ФИО',
+    '#type' => 'textfield',
+    '#maxlength' => 128,
+    '#required' => TRUE,
+  );
+
+  $form['field_inn'] = array(
+    '#title' => 'ИНН',
+    '#type' => 'textfield',
+    '#maxlength' => 12,
+    '#element_validate' => array('element_validate_number'),
+    '#required' => TRUE,
+  );
+
+  $form['field_kpp'] = array(
+    '#title' => 'КПП',
+    '#type' => 'textfield',
+    '#maxlength' => 9,
+    '#element_validate' => array('element_validate_number'),
+    '#required' => TRUE,
+  );
+
+  return $form;
+}
+
+/**
+ * Функция валидации для формы данных плательщика.
+ *
+ * Сначала необходимо обязательно проверять значение поля на объявление.
+ * isset($form_state['values']['field_NAME']
+ */
+function sl7_invoice_customer_validate($form, &$form_state) {
+  if (isset($form_state['values']['field_inn']) && strlen($form_state['values']['field_inn']) < 10 && strlen($form_state['values']['field_inn'] > 12)) {
+    form_set_error('field_inn', 'Количество цифр в ИНН должно быть не менее 10 и не более 12.');
+  }
+  if (isset($form_state['values']['field_kpp']) && strlen($form_state['values']['field_kpp']) != 9) {
+    form_set_error('field_kpp', 'Количество цифр в КПП должно быть 9.');
+  }
+}
+
+/**
+ * Инициализация оплаты.
+ *
+ * @param $order
+ *  ID платежа или объект.
+ * @return mixed
+ */
+function sl7_invoice_callback($order) {
+  return sl7_payment_get_controller('sl7_invoice')->internal($order);
+}
+
+function sl7_invoice_get_nds($nds = NULL) {
+  $nds_list = array(
+    0 => 'Без НДС',
+    10 => 'В том числе НДС 10%',
+    18 => 'В том числе НДС 18%',
+  );
+
+  if (array_key_exists($nds, $nds_list)) {
+    return $nds_list[$nds];
+  }
+
+  return $nds_list;
+}
+
+function sl7_invoice_settings_form($form, &$form_state) {
+
+  $form['sl7_invoice_info'] = array(
+    '#type' => 'textarea',
+    '#title' => 'Дополнительная информация о счете',
+    '#description' => 'Надпись над счетом. <i>Не обязательно</i>.',
+    '#default_value' => variable_get('sl7_invoice_info', ''),
+    '#rows' => 3,
+  );
+
+  $form['company'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Реквизиты получателя',
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+  $form['company']['sl7_invoice_company_name'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Название компании',
+    '#description' => 'Полное наименование компании. Пример: <i>ООО "РогаКопыта"</i> или <i>ИП Иванов П.Н.</i>',
+    '#default_value' => variable_get('sl7_invoice_company_name'),
+    '#required' => TRUE,
+  );
+  $form['company']['sl7_invoice_company_tel'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Телефон',
+    '#default_value' => variable_get('sl7_invoice_company_tel'),
+    '#maxlength' => 25,
+  );
+  $form['company']['sl7_invoice_company_inn'] = array(
+    '#type' => 'textfield',
+    '#title' => 'ИНН',
+    '#default_value' => variable_get('sl7_invoice_company_inn'),
+    '#element_validate' => array('element_validate_number'),
+    '#required' => TRUE,
+    '#maxlength' => 12,
+  );
+  $form['company']['sl7_invoice_company_kpp'] = array(
+    '#type' => 'textfield',
+    '#title' => 'КПП',
+    '#default_value' => variable_get('sl7_invoice_company_kpp'),
+    '#element_validate' => array('element_validate_number'),
+    '#required' => TRUE,
+    '#maxlength' => 9,
+  );
+
+  $form['bank'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Банковские реквизиты',
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+  $form['bank']['sl7_invoice_bank_name'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Название банка',
+    '#default_value' => variable_get('sl7_invoice_bank_name'),
+    '#required' => TRUE,
+  );
+  $form['bank']['sl7_invoice_bank_bik'] = array(
+    '#type' => 'textfield',
+    '#title' => 'БИК банка',
+    '#default_value' => variable_get('sl7_invoice_bank_bik'),
+    '#element_validate' => array('element_validate_number'),
+    '#required' => TRUE,
+    '#maxlength' => 9,
+  );
+  $form['bank']['sl7_invoice_bank_rs'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Расчетный счет компании (Р/с)',
+    '#default_value' => variable_get('sl7_invoice_bank_rs'),
+    '#element_validate' => array('element_validate_number'),
+    '#required' => TRUE,
+    '#maxlength' => 20,
+  );
+  $form['bank']['sl7_invoice_bank_ks'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Корреспондирующий счет банка (К/с)',
+    '#default_value' => variable_get('sl7_invoice_bank_ks'),
+    '#element_validate' => array('element_validate_number'),
+    '#required' => TRUE,
+    '#maxlength' => 20,
+  );
+
+  $form['sl7_invoice_nds'] = array(
+    '#type' => 'select',
+    '#title' => 'Налог на добавленую стоимость (НДС)',
+    '#description' => 'Выберите ставку по НДС.',
+    '#default_value' => variable_get('sl7_invoice_nds'),
+    '#required' => TRUE,
+    '#options' => sl7_invoice_get_nds(),
+  );
+
+  $form['sl7_invoice_company_seal_fid'] = array(
+    '#type' => 'managed_file',
+    '#title' => 'Изображение печати/знака компании',
+    '#description' => 'Печать или знак компании на счете. Максимальный размер - 1Мб. gif png jpg jpeg. <i>Не обязательно</i>.',
+    '#default_value' => variable_get('sl7_invoice_company_seal_fid', ''),
+    '#upload_location' => 'public://sl7_invoice/',
+    '#upload_validators' => array(
+      'file_validate_is_image' => array(),
+      'file_validate_extensions' => array('gif png jpg jpeg'),
+      'file_validate_size' => array(1024*1024),
+    ),
+  );
+
+  $form['gm'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Руководитель',
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+  );
+  $form['gm']['sl7_invoice_gm_to_ca'] = array(
+    '#title' => 'Руководитель и бухгалтер - одно лицо.',
+    '#type' => 'checkbox',
+    '#default_value' => variable_get('sl7_invoice_gm_to_ca', 0),
+  );
+  $form['gm']['sl7_invoice_gm_post'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Название должности',
+    '#default_value' => variable_get('sl7_invoice_gm_post', 'Генеральный директор'),
+    '#required' => TRUE,
+  );
+  $form['gm']['sl7_invoice_gm_fio'] = array(
+    '#type' => 'textfield',
+    '#title' => 'ФИО',
+    '#default_value' => variable_get('sl7_invoice_gm_fio', ''),
+    '#required' => TRUE,
+  );
+  $form['gm']['sl7_invoice_gm_sign_fid'] = array(
+    '#type' => 'managed_file',
+    '#title' => 'Изображение с подписью руководителя',
+    '#description' => 'Подпись руководителя на счете. Максимальный размер - 1 Мб. gif png jpg jpeg.',
+    '#default_value' => variable_get('sl7_invoice_gm_sign_fid'),
+    '#upload_location' => 'public://sl7_invoice/',
+    '#upload_validators' => array(
+      'file_validate_is_image' => array(),
+      'file_validate_extensions' => array('gif png jpg jpeg'),
+      'file_validate_size' => array(1024*1024),
+    ),
+  );
+
+  $form['ca'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Бухгалтер',
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+    '#states' => array(
+      'invisible' => array(
+        ':input[name="sl7_invoice_gm_to_ca"]' =>  array('checked' => TRUE),
+      ),
+    ),
+  );
+  $form['ca']['sl7_invoice_ca_post'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Название должности',
+    '#default_value' => variable_get('sl7_invoice_ca_post', 'Главный бухгалтер'),
+    '#required' => TRUE,
+  );
+  $form['ca']['sl7_invoice_ca_fio'] = array(
+    '#type' => 'textfield',
+    '#title' => 'ФИО',
+    '#default_value' => variable_get('sl7_invoice_ca_fio', ''),
+    '#required' => TRUE,
+  );
+  $form['ca']['sl7_invoice_ca_sign_fid'] = array(
+    '#type' => 'managed_file',
+    '#title' => 'Изображение с подписью бухгалтера',
+    '#description' => 'Подпись бухгалтера на счете. Максимальный размер - 1 Мб. gif png jpg jpeg.',
+    '#default_value' => variable_get('sl7_invoice_ca_sign_fid'),
+    '#upload_location' => 'public://sl7_invoice/',
+    '#upload_validators' => array(
+      'file_validate_is_image' => array(),
+      'file_validate_extensions' => array('gif png jpg jpeg'),
+      'file_validate_size' => array(1024*1024),
+    ),
+  );
+
+  $form['#after_build'][] = '_sl7_invoice_settings_form_after_build';
+  $form['#submit'][] = '_sl7_invoice_settings_form_extra_submit';
+
+  return system_settings_form($form);
+}
+
+/**
+ * File set permanent.
+ */
+function _sl7_invoice_settings_form_extra_submit($form, &$form_state) {
+  foreach ($form as $name => $values) {
+    if (!empty($values['#type']) && $values['#type'] == 'fieldset') {
+      $fieldset = $form[$name];
+      call_user_func_array(__FUNCTION__, array($fieldset, $form_state));
+    }
+    else {
+      if (is_array($values) && !empty($values['#type']) && $values['#type'] == 'managed_file') {
+        if ($form_state['values'][$name] != 0) {
+          SL7ApiFile::setPermanent($form_state['values'][$name], 'sl7_invoice', 'admin_settings', '1');
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Remove required for invisible elements.
+ */
+function _sl7_invoice_settings_form_after_build(&$form, $form_state) {
+  if ($form_state['process_input']) {
+    if ($form_state['values']['sl7_invoice_gm_to_ca'] == TRUE) {
+      unset($form['ca']['sl7_invoice_ca_fio']);
+    }
+  }
+
+  return $form;
+}

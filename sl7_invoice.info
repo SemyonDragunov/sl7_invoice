@@ -1,0 +1,14 @@
+name = Счет (юридическое лицо)
+description = Выставление счета в PDF для юридических лиц.
+package = SL7
+version = 7.x-1.0
+core = 7.x
+
+configure = admin/control-panel/payment/invoice
+
+files[] = includes/sl7_invoice.controller.inc
+
+dependencies[] = sl7_control_panel
+dependencies[] = sl7_payment
+dependencies[] = sl7_mpdf
+dependencies[] = entityreference
